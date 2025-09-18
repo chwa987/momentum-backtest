@@ -51,12 +51,16 @@ def compute_indicators(price, idx_price, volume):
 def momentum_backtest(tickers, start="2018-01-01", end=None, top_n=10):
     if end is None:
         end = datetime.today().strftime("%Y-%m-%d")
+
     idx = yf.download("^GSPC", start=start, end=end, auto_adjust=True)
     idx_price = get_series(idx, "Close")
+
     data = yf.download(tickers, start=start, end=end, auto_adjust=True, group_by="ticker")
+
     months = pd.date_range(start, end, freq="M")
     portfolio_values, benchmark_values, dates = [], [], []
     portfolio_value, benchmark_value = 100.0, 100.0
+
     for date in months:
         window_start = date - pd.Timedelta(days=400)
         scores = {}
@@ -68,11 +72,15 @@ def momentum_backtest(tickers, start="2018-01-01", end=None, top_n=10):
                 indicators = compute_indicators(price, idx_price.loc[window_start:date], volume)
                 score = sum([ind for ind in indicators if np.isfinite(ind)])
                 scores[ticker] = score
-            except Exception:
+            except:
                 continue
+
         if not scores:
             continue
+
+        # ✅ Nur Top-N Aktien wählen
         top_tickers = sorted(scores, key=scores.get, reverse=True)[:top_n]
+
         ret = 0
         for ticker in top_tickers:
             try:
@@ -83,20 +91,33 @@ def momentum_backtest(tickers, start="2018-01-01", end=None, top_n=10):
             except:
                 continue
         ret /= max(1, len(top_tickers))
+
         bench_ret = idx_price.pct_change().iloc[-1] if len(idx_price.loc[:date]) > 1 else 0
         portfolio_value *= (1 + ret)
         benchmark_value *= (1 + bench_ret)
+
         dates.append(date)
         portfolio_values.append(portfolio_value)
         benchmark_values.append(benchmark_value)
+
     results = pd.DataFrame({"Portfolio": portfolio_values, "Benchmark": benchmark_values}, index=dates)
+
     if results.empty:
         return results, {}
-    cagr = (results["Portfolio"].iloc[-1] / results["Portfolio"].iloc[0]) ** (1/((results.index[-1]-results.index[0]).days/365)) - 1
+
+    cagr = (results["Portfolio"].iloc[-1] / results["Portfolio"].iloc[0]) ** (
+        1 / ((results.index[-1] - results.index[0]).days / 365)) - 1
     vol = results["Portfolio"].pct_change().std() * np.sqrt(252)
     dd = ((results["Portfolio"] / results["Portfolio"].cummax()) - 1).min()
     sharpe = (cagr - 0.0) / vol if vol > 0 else np.nan
-    stats = {"CAGR": round(cagr*100,2), "Volatilität": round(vol*100,2), "Max Drawdown": round(dd*100,2), "Sharpe-Ratio": round(sharpe,2)}
+
+    stats = {
+        "CAGR": round(cagr * 100, 2),
+        "Volatilität": round(vol * 100, 2),
+        "Max Drawdown": round(dd * 100, 2),
+        "Sharpe-Ratio": round(sharpe, 2)
+    }
+
     return results, stats
 
 # ----------------------------
