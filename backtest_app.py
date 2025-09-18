@@ -2,7 +2,6 @@ import streamlit as st
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from datetime import datetime
 
 # ----------------------------
@@ -71,6 +70,8 @@ def momentum_backtest(tickers, start="2018-01-01", end=None, top_n=10):
                 scores[ticker] = score
             except Exception:
                 continue
+        if not scores:
+            continue
         top_tickers = sorted(scores, key=scores.get, reverse=True)[:top_n]
         ret = 0
         for ticker in top_tickers:
@@ -89,6 +90,8 @@ def momentum_backtest(tickers, start="2018-01-01", end=None, top_n=10):
         portfolio_values.append(portfolio_value)
         benchmark_values.append(benchmark_value)
     results = pd.DataFrame({"Portfolio": portfolio_values, "Benchmark": benchmark_values}, index=dates)
+    if results.empty:
+        return results, {}
     cagr = (results["Portfolio"].iloc[-1] / results["Portfolio"].iloc[0]) ** (1/((results.index[-1]-results.index[0]).days/365)) - 1
     vol = results["Portfolio"].pct_change().std() * np.sqrt(252)
     dd = ((results["Portfolio"] / results["Portfolio"].cummax()) - 1).min()
@@ -101,12 +104,25 @@ def momentum_backtest(tickers, start="2018-01-01", end=None, top_n=10):
 # ----------------------------
 st.title("📈 Momentum-Backtest (Top 10)")
 
-tickers_input = st.text_area("Gib Ticker ein (kommasepariert)", "APP, LEU, XMTR, RHM.DE, KTOS, RKLB, MP, SOFI, LITE, LQDA")
-tickers = [t.strip() for t in tickers_input.split(",") if t.strip()]
+uploaded_file = st.file_uploader("📂 Lade deine Champions-CSV hoch", type=["csv"])
+tickers = []
 
-if st.button("Backtest starten"):
+if uploaded_file is not None:
+    df_csv = pd.read_csv(uploaded_file)
+    if "Ticker" in df_csv.columns:
+        tickers = df_csv["Ticker"].dropna().astype(str).tolist()
+        st.success(f"{len(tickers)} Ticker aus CSV geladen.")
+        st.write(df_csv.head())
+else:
+    tickers_input = st.text_area("Oder gib Ticker ein (kommasepariert)", "AAPL, MSFT, NVDA, AMZN, META, TSLA, NFLX, INTC, AMD, GOOGL")
+    tickers = [t.strip() for t in tickers_input.split(",") if t.strip()]
+
+if tickers and st.button("Backtest starten"):
     results, stats = momentum_backtest(tickers, start="2018-01-01", top_n=10)
-    st.line_chart(results)
-    st.write("📊 Kennzahlen:")
-    st.json(stats)
-    st.download_button("📥 Ergebnisse als CSV", results.to_csv().encode("utf-8"), "backtest_results.csv", "text/csv")
+    if not results.empty:
+        st.line_chart(results)
+        st.write("📊 Kennzahlen:")
+        st.json(stats)
+        st.download_button("📥 Ergebnisse als CSV", results.to_csv().encode("utf-8"), "backtest_results.csv", "text/csv")
+    else:
+        st.error("❌ Keine Ergebnisse – überprüfe deine Ticker oder CSV-Datei.")
